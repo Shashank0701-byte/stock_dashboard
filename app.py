@@ -39,6 +39,18 @@ try:
         st.subheader(f"Company Profile: {ticker_data.info.get('longName', ticker_symbol)}")
         st.markdown(f"**Sector**: {ticker_data.info.get('sector', 'N/A')}")
         st.markdown(f"**Industry**: {ticker_data.info.get('industry', 'N/A')}")
+
+        # --- Business Summary and Key Metrics ---
+        with st.expander("Business Summary"):
+            st.write(ticker_data.info.get('longBusinessSummary', 'No summary available.'))
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Market Cap", f"${ticker_data.info.get('marketCap', 0)/1e9:.2f}B")
+        with col2:
+            st.metric("P/E Ratio", f"{ticker_data.info.get('trailingPE', 0):.2f}")
+        with col3:
+            st.metric("Dividend Yield", f"{ticker_data.info.get('dividendYield', 0)*100:.2f}%")
         # --- Price Chart ---
         st.subheader(f"Price Chart for: {ticker_symbol}")
         fig_price = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Candlestick')])
