@@ -35,6 +35,10 @@ try:
     if df.empty:
         st.error("No data found for the given ticker symbol and date range.")
     else:
+        # --- Display Company Profile ---
+        st.subheader(f"Company Profile: {ticker_data.info.get('longName', ticker_symbol)}")
+        st.markdown(f"**Sector**: {ticker_data.info.get('sector', 'N/A')}")
+        st.markdown(f"**Industry**: {ticker_data.info.get('industry', 'N/A')}")
         # --- Price Chart ---
         st.subheader(f"Price Chart for: {ticker_symbol}")
         fig_price = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Candlestick')])
