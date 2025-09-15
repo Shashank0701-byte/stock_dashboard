@@ -3,13 +3,42 @@ import pandas as pd
 import yfinance as yf
 from datetime import date, timedelta
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots # New import
+from plotly.subplots import make_subplots
+import nltk # New import
 
 st.set_page_config(page_title="Stock Analysis Dashboard", layout="wide")
 st.title("Stock Analysis Dashboard")
 
-# Function to calculate RSI
+# --- START OF NEW SECTION for NLTK Setup ---
+# Download the VADER lexicon for sentiment analysis on first run
+try:
+    nltk.data.find('sentiment/vader_lexicon.zip')
+except nltk.downloader.DownloadError:
+    st.info("Downloading VADER lexicon for sentiment analysis...")
+    nltk.download('vader_lexicon')
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+# --- END OF NEW SECTION ---
+
+# --- Helper Functions (Cached for performance) ---
+@st.cache_data
+def get_stock_data(ticker, start_date, end_date):
+    """Fetches historical stock data."""
+    return yf.Ticker(ticker).history(start=start_date, end=end_date)
+
+@st.cache_data
+def get_ticker_info(ticker_symbol):
+    """Fetches company information."""
+    return yf.Ticker(ticker_symbol).info
+
+# --- START OF NEW SECTION for News Function ---
+@st.cache_data
+def get_news(ticker_symbol):
+    """Fetches recent news for a ticker."""
+    return yf.Ticker(ticker_symbol).news
+# --- END OF NEW SECTION ---
+
 def calculate_rsi(data, window=14):
+    """Calculates the Relative Strength Index (RSI)."""
     delta = data['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
@@ -31,20 +60,20 @@ end_date = st.sidebar.date_input('End date', today)
 st.sidebar.subheader("Display Options")
 show_sma = st.sidebar.checkbox("Show Moving Averages", value=True)
 show_rsi = st.sidebar.checkbox("Show RSI", value=True)
-show_volume = st.sidebar.checkbox("Show Volume", value=True) # New toggle
+show_volume = st.sidebar.checkbox("Show Volume", value=True)
 show_comparison = st.sidebar.checkbox("Show Comparative Analysis", value=True)
+show_news = st.sidebar.checkbox("Show Recent News", value=True) # New toggle
 
-# --- Main App Logic ---
+# --- Main App Logic (The rest of the file is the same as before) ---
 if primary_ticker:
     try:
-        ticker_data = yf.Ticker(primary_ticker)
-        df = ticker_data.history(start=start_date, end=end_date)
-        info = ticker_data.info
+        df = get_stock_data(primary_ticker, start_date, end_date)
+        info = get_ticker_info(primary_ticker)
         
         if df.empty:
             st.error("No data found for the given ticker symbol and date range.")
         else:
-            # --- Display Company Profile ---
+            # Display Company Profile and Metrics...
             st.subheader(f"Company Profile: {info.get('longName', primary_ticker)}")
             st.markdown(f"**Sector**: {info.get('sector', 'N/A')} | **Industry**: {info.get('industry', 'N/A')}")
             with st.expander("Business Summary"):
@@ -57,38 +86,27 @@ if primary_ticker:
                 st.metric("P/E Ratio", f"{info.get('trailingPE', 0):.2f}")
             with col3:
                 st.metric("Dividend Yield", f"{info.get('dividendYield', 0)*100:.2f}%")
-
-            # --- START OF MODIFIED SECTION for Volume Chart ---
+            
+            # Price and Volume Chart...
             st.subheader(f"Price Chart for: {primary_ticker}")
             fig_price = make_subplots(rows=2, cols=1, shared_xaxes=True, 
                                       vertical_spacing=0.05, row_heights=[0.7, 0.3])
-
-            # Candlestick chart for price
-            fig_price.add_trace(go.Candlestick(x=df.index,
-                                             open=df['Open'],
-                                             high=df['High'],
-                                             low=df['Low'],
-                                             close=df['Close'],
-                                             name='Candlestick'),
-                              row=1, col=1)
+            fig_price.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Candlestick'), row=1, col=1)
             
-            # Moving Averages
             if show_sma:
                 df['SMA_20'] = df['Close'].rolling(window=20).mean()
                 df['SMA_50'] = df['Close'].rolling(window=50).mean()
                 fig_price.add_trace(go.Scatter(x=df.index, y=df['SMA_20'], mode='lines', name='20-Day SMA', line=dict(color='orange')), row=1, col=1)
                 fig_price.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], mode='lines', name='50-Day SMA', line=dict(color='purple')), row=1, col=1)
 
-            # Volume bar chart
             if show_volume:
                 fig_price.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume'), row=2, col=1)
             
             fig_price.update_layout(xaxis_rangeslider_visible=False, title=f"{primary_ticker} Price and Volume", yaxis_title="Price (USD)")
-            fig_price.update_yaxes(title_text="Volume", row=2, col=1) # Label y-axis for volume
+            fig_price.update_yaxes(title_text="Volume", row=2, col=1)
             st.plotly_chart(fig_price, use_container_width=True)
-            # --- END OF MODIFIED SECTION ---
             
-            # --- RSI Chart ---
+            # RSI Chart...
             if show_rsi:
                 df['RSI'] = calculate_rsi(df)
                 st.subheader("Relative Strength Index (RSI)")
@@ -99,12 +117,12 @@ if primary_ticker:
                 fig_rsi.update_layout(title="RSI Chart", yaxis_title="RSI")
                 st.plotly_chart(fig_rsi, use_container_width=True)
             
-            # --- Comparative Analysis ---
+            # Comparative Analysis...
             if len(ticker_list) > 1 and show_comparison:
                 st.subheader("Comparative Performance")
                 norm_df = pd.DataFrame()
                 for ticker in ticker_list:
-                    data = yf.Ticker(ticker).history(start=start_date, end=end_date)
+                    data = get_stock_data(ticker, start_date, end_date)
                     if not data.empty:
                         norm_df[ticker] = (data['Close'] / data['Close'].iloc[0]) - 1
                 
