@@ -4,12 +4,11 @@ import yfinance as yf
 from datetime import date, timedelta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import nltk # New import
+import nltk
 
 st.set_page_config(page_title="Stock Analysis Dashboard", layout="wide")
 st.title("Stock Analysis Dashboard")
 
-# --- START OF NEW SECTION for NLTK Setup ---
 # Download the VADER lexicon for sentiment analysis on first run
 try:
     nltk.data.find('sentiment/vader_lexicon.zip')
@@ -17,7 +16,6 @@ except nltk.downloader.DownloadError:
     st.info("Downloading VADER lexicon for sentiment analysis...")
     nltk.download('vader_lexicon')
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
-# --- END OF NEW SECTION ---
 
 # --- Helper Functions (Cached for performance) ---
 @st.cache_data
@@ -30,12 +28,10 @@ def get_ticker_info(ticker_symbol):
     """Fetches company information."""
     return yf.Ticker(ticker_symbol).info
 
-# --- START OF NEW SECTION for News Function ---
 @st.cache_data
 def get_news(ticker_symbol):
     """Fetches recent news for a ticker."""
     return yf.Ticker(ticker_symbol).news
-# --- END OF NEW SECTION ---
 
 def calculate_rsi(data, window=14):
     """Calculates the Relative Strength Index (RSI)."""
@@ -56,15 +52,15 @@ today = date.today()
 start_date = st.sidebar.date_input('Start date', today - timedelta(days=365*5))
 end_date = st.sidebar.date_input('End date', today)
 
-# Indicator toggles
+# Feature Toggles
 st.sidebar.subheader("Display Options")
 show_sma = st.sidebar.checkbox("Show Moving Averages", value=True)
 show_rsi = st.sidebar.checkbox("Show RSI", value=True)
 show_volume = st.sidebar.checkbox("Show Volume", value=True)
 show_comparison = st.sidebar.checkbox("Show Comparative Analysis", value=True)
-show_news = st.sidebar.checkbox("Show Recent News", value=True) # New toggle
+show_news = st.sidebar.checkbox("Show Recent News", value=True)
 
-# --- Main App Logic (The rest of the file is the same as before) ---
+# --- Main App Logic ---
 if primary_ticker:
     try:
         df = get_stock_data(primary_ticker, start_date, end_date)
@@ -73,7 +69,7 @@ if primary_ticker:
         if df.empty:
             st.error("No data found for the given ticker symbol and date range.")
         else:
-            # Display Company Profile and Metrics...
+            # Display Company Profile and Metrics
             st.subheader(f"Company Profile: {info.get('longName', primary_ticker)}")
             st.markdown(f"**Sector**: {info.get('sector', 'N/A')} | **Industry**: {info.get('industry', 'N/A')}")
             with st.expander("Business Summary"):
@@ -87,7 +83,7 @@ if primary_ticker:
             with col3:
                 st.metric("Dividend Yield", f"{info.get('dividendYield', 0)*100:.2f}%")
             
-            # Price and Volume Chart...
+            # Price and Volume Chart
             st.subheader(f"Price Chart for: {primary_ticker}")
             fig_price = make_subplots(rows=2, cols=1, shared_xaxes=True, 
                                       vertical_spacing=0.05, row_heights=[0.7, 0.3])
@@ -106,7 +102,7 @@ if primary_ticker:
             fig_price.update_yaxes(title_text="Volume", row=2, col=1)
             st.plotly_chart(fig_price, use_container_width=True)
             
-            # RSI Chart...
+            # RSI Chart
             if show_rsi:
                 df['RSI'] = calculate_rsi(df)
                 st.subheader("Relative Strength Index (RSI)")
@@ -117,7 +113,7 @@ if primary_ticker:
                 fig_rsi.update_layout(title="RSI Chart", yaxis_title="RSI")
                 st.plotly_chart(fig_rsi, use_container_width=True)
             
-            # Comparative Analysis...
+            # Comparative Analysis
             if len(ticker_list) > 1 and show_comparison:
                 st.subheader("Comparative Performance")
                 norm_df = pd.DataFrame()
@@ -135,6 +131,30 @@ if primary_ticker:
                                            yaxis_title="Percentage Change",
                                            yaxis_tickformat=".2%")
                     st.plotly_chart(fig_comp, use_container_width=True)
+
+            # --- START OF NEW SECTION for News Sentiment Display ---
+            if show_news:
+                st.subheader(f"Recent News for {primary_ticker}")
+                news = get_news(primary_ticker)
+                if not news:
+                    st.write("No recent news found.")
+                else:
+                    sia = SentimentIntensityAnalyzer()
+                    for article in news[:10]: # Display top 10 articles
+                        sentiment = sia.polarities(article['title'])
+                        color = "gray" # Default to neutral
+                        if sentiment['compound'] >= 0.05:
+                            color = "green"
+                        elif sentiment['compound'] <= -0.05:
+                            color = "red"
+                        
+                        st.markdown(f"""
+                        <div style="border-left: 5px solid {color}; padding-left: 10px; margin-bottom: 10px;">
+                            <p style="margin: 0;"><strong><a href="{article['link']}" target="_blank" style="text-decoration: none; color: inherit;">{article['title']}</a></strong></p>
+                            <small>Publisher: {article['publisher']} | Compound Score: {sentiment['compound']:.2f}</small>
+                        </div>
+                        """, unsafe_allow_html=True)
+            # --- END OF NEW SECTION ---
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
