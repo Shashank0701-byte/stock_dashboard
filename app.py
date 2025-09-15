@@ -18,7 +18,9 @@ def calculate_rsi(data, window=14):
 
 # --- Sidebar for User Inputs ---
 st.sidebar.header("User Input")
-ticker_symbol = st.sidebar.text_input("Enter Stock Ticker", "AAPL")
+ticker_list_str = st.sidebar.text_input("Enter Stock Tickers (comma-separated)", "AAPL, GOOG, MSFT")
+ticker_list = [ticker.strip().upper() for ticker in ticker_list_str.split(',')]
+ticker_symbol = ticker_list[0] # For now, we'll still use the first one for the main chart
 today = date.today()
 start_date = st.sidebar.date_input('Start date', today - timedelta(days=365*5))
 end_date = st.sidebar.date_input('End date', today)
