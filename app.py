@@ -76,6 +76,26 @@ try:
             fig_rsi.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold (30)")
             fig_rsi.update_layout(title="RSI Chart", yaxis_title="RSI")
             st.plotly_chart(fig_rsi, use_container_width=True)
-
+        # --- Comparative Analysis ---
+        if len(ticker_list) > 1:
+            st.subheader("Comparative Performance")
+    
+        # Create a new dataframe to store normalized returns
+            norm_df = pd.DataFrame()
+    
+        for ticker in ticker_list:
+            data = yf.Ticker(ticker).history(start=start_date, end=end_date)
+            # Normalize the 'Close' price
+            norm_df[ticker] = (data['Close'] / data['Close'].iloc[0]) - 1
+    
+        # Plot the normalized returns
+        fig_comp = go.Figure()
+        for ticker in norm_df.columns:
+            fig_comp.add_trace(go.Scatter(x=norm_df.index, y=norm_df[ticker], mode='lines', name=ticker))
+    
+            fig_comp.update_layout(title="Normalized Stock Performance",
+                yaxis_title="Percentage Change",
+                yaxis_tickformat=".2%")
+            st.plotly_chart(fig_comp, use_container_width=True)
 except Exception as e:
     st.error(f"An error occurred: {e}")
