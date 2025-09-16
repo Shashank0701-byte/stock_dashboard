@@ -29,7 +29,6 @@ def get_ticker_info(ticker_symbol):
     """Fetches company information."""
     return yf.Ticker(ticker_symbol).info
 
-# --- NEW HELPER FUNCTIONS FOR FINANCIALS ---
 @st.cache_data
 def get_financials(ticker_symbol):
     """Fetches income statement."""
@@ -85,10 +84,16 @@ end_date = st.sidebar.date_input('End date', today)
 # Feature Toggles
 st.sidebar.subheader("Display Options")
 show_sma = st.sidebar.checkbox("Show Moving Averages", value=True)
-show_rsi = st.sidebar.checkbox("Show RSI", value=True)
 show_volume = st.sidebar.checkbox("Show Volume", value=True)
 show_comparison = st.sidebar.checkbox("Show Comparative Analysis", value=True)
 show_news = st.sidebar.checkbox("Show Recent News", value=True)
+
+# --- NEW: Technical Indicator Toggles ---
+st.sidebar.subheader("Technical Indicators")
+show_rsi = st.sidebar.checkbox("Show RSI", value=True)
+show_bb = st.sidebar.checkbox("Show Bollinger Bands", value=True)
+show_macd = st.sidebar.checkbox("Show MACD", value=True)
+
 
 # --- Main App Logic ---
 if primary_ticker:
@@ -123,11 +128,21 @@ if primary_ticker:
                                           vertical_spacing=0.05, row_heights=[0.7, 0.3])
                 fig_price.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Candlestick'), row=1, col=1)
                 
-                if show_sma:
+                # Calculate SMAs first as they are needed for Bollinger Bands
+                if show_sma or show_bb:
                     df['SMA_20'] = df['Close'].rolling(window=20).mean()
+                if show_sma:
                     df['SMA_50'] = df['Close'].rolling(window=50).mean()
                     fig_price.add_trace(go.Scatter(x=df.index, y=df['SMA_20'], mode='lines', name='20-Day SMA', line=dict(color='orange')), row=1, col=1)
                     fig_price.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], mode='lines', name='50-Day SMA', line=dict(color='purple')), row=1, col=1)
+
+                # --- NEW: Add Bollinger Bands ---
+                if show_bb:
+                    df['BB_20_std'] = df['Close'].rolling(window=20).std()
+                    df['BB_Upper'] = df['SMA_20'] + (df['BB_20_std'] * 2)
+                    df['BB_Lower'] = df['SMA_20'] - (df['BB_20_std'] * 2)
+                    fig_price.add_trace(go.Scatter(x=df.index, y=df['BB_Upper'], mode='lines', name='Upper Band', line=dict(color='gray', width=1)))
+                    fig_price.add_trace(go.Scatter(x=df.index, y=df['BB_Lower'], mode='lines', name='Lower Band', line=dict(color='gray', width=1), fill='tonexty', fillcolor='rgba(128,128,128,0.1)'))
 
                 if show_volume:
                     fig_price.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume'), row=2, col=1)
@@ -136,6 +151,22 @@ if primary_ticker:
                 fig_price.update_yaxes(title_text="Volume", row=2, col=1)
                 st.plotly_chart(fig_price, use_container_width=True)
                 
+                # --- NEW: Add MACD Chart ---
+                if show_macd:
+                    st.subheader("MACD (Moving Average Convergence Divergence)")
+                    ema_12 = df['Close'].ewm(span=12, adjust=False).mean()
+                    ema_26 = df['Close'].ewm(span=26, adjust=False).mean()
+                    df['MACD'] = ema_12 - ema_26
+                    df['Signal_Line'] = df['MACD'].ewm(span=9, adjust=False).mean()
+                    
+                    fig_macd = go.Figure()
+                    fig_macd.add_trace(go.Scatter(x=df.index, y=df['MACD'], name='MACD Line', line=dict(color='blue')))
+                    fig_macd.add_trace(go.Scatter(x=df.index, y=df['Signal_Line'], name='Signal Line', line=dict(color='orange')))
+                    fig_macd.add_trace(go.Bar(x=df.index, y=(df['MACD'] - df['Signal_Line']), name='Histogram', marker_color='gray'))
+                    
+                    fig_macd.update_layout(title="MACD Chart", yaxis_title="Value")
+                    st.plotly_chart(fig_macd, use_container_width=True)
+
                 # RSI Chart
                 if show_rsi:
                     df['RSI'] = calculate_rsi(df)
@@ -167,17 +198,14 @@ if primary_ticker:
                         st.plotly_chart(fig_comp, use_container_width=True)
 
             with tab2:
-                # --- START OF FINANCIALS CONTENT ---
+                # Financials Content
                 st.subheader(f"Financials for {primary_ticker}")
-
-                # Fetch data
                 financials = get_financials(primary_ticker)
                 balance_sheet = get_balance_sheet(primary_ticker)
 
                 if financials.empty or balance_sheet.empty:
                     st.warning("Could not retrieve financial data for this stock.")
                 else:
-                    # Display key metrics from income statement
                     st.write("**Income Statement Highlights (Annual)**")
                     try:
                         income_metrics = {
@@ -192,7 +220,6 @@ if primary_ticker:
                     except KeyError:
                         st.warning("Could not display some income statement metrics.")
 
-                    # Display key metrics from balance sheet
                     st.write("**Balance Sheet Highlights (Annual)**")
                     try:
                         balance_metrics = {
@@ -207,12 +234,10 @@ if primary_ticker:
                     except KeyError:
                         st.warning("Could not display some balance sheet metrics.")
                     
-                    # Display full statements in expanders
                     with st.expander("View Full Annual Income Statement"):
                         st.dataframe(financials)
                     with st.expander("View Full Annual Balance Sheet"):
                         st.dataframe(balance_sheet)
-                # --- END OF FINANCIALS CONTENT ---
 
             with tab3:
                 # News Sentiment Analysis
