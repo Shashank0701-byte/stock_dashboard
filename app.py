@@ -5,6 +5,7 @@ from datetime import date, timedelta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import nltk
+import requests # New import
 
 st.set_page_config(page_title="Stock Analysis Dashboard", layout="wide")
 st.title("Stock Analysis Dashboard")
@@ -12,7 +13,7 @@ st.title("Stock Analysis Dashboard")
 # Download the VADER lexicon for sentiment analysis on first run
 try:
     nltk.data.find('sentiment/vader_lexicon.zip')
-except nltk.downloader.DownloadError:
+except LookupError:
     st.info("Downloading VADER lexicon for sentiment analysis...")
     nltk.download('vader_lexicon')
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
@@ -28,10 +29,31 @@ def get_ticker_info(ticker_symbol):
     """Fetches company information."""
     return yf.Ticker(ticker_symbol).info
 
+# --- START OF REWRITTEN NEWS FUNCTION ---
 @st.cache_data
 def get_news(ticker_symbol):
-    """Fetches recent news for a ticker."""
-    return yf.Ticker(ticker_symbol).news
+    """Fetches recent news from NewsAPI.org."""
+    try:
+        API_KEY = st.secrets["NEWS_API_KEY"]
+        url = f"https://newsapi.org/v2/everything?q={ticker_symbol}&apiKey={API_KEY}&sortBy=publishedAt&language=en"
+        
+        response = requests.get(url)
+        response.raise_for_status() # Raises an exception for bad status codes
+        
+        articles = response.json().get("articles", [])
+        # Format the data to match what our app expects
+        formatted_news = []
+        for article in articles:
+            formatted_news.append({
+                'title': article.get('title'),
+                'publisher': article.get('source', {}).get('name'),
+                'link': article.get('url')
+            })
+        return formatted_news
+    except Exception as e:
+        st.error(f"Could not fetch news. Error: {e}. Please check your API key in secrets.toml.")
+        return []
+# --- END OF REWRITTEN NEWS FUNCTION ---
 
 def calculate_rsi(data, window=14):
     """Calculates the Relative Strength Index (RSI)."""
@@ -132,7 +154,7 @@ if primary_ticker:
                                            yaxis_tickformat=".2%")
                     st.plotly_chart(fig_comp, use_container_width=True)
 
-            # --- START OF NEW SECTION for News Sentiment Display ---
+            # News Sentiment Analysis
             if show_news:
                 st.subheader(f"Recent News for {primary_ticker}")
                 news = get_news(primary_ticker)
@@ -140,9 +162,13 @@ if primary_ticker:
                     st.write("No recent news found.")
                 else:
                     sia = SentimentIntensityAnalyzer()
-                    for article in news[:10]: # Display top 10 articles
-                        sentiment = sia.polarities(article['title'])
-                        color = "gray" # Default to neutral
+                    for article in news[:10]: 
+                        article_title = article.get('title', 'No Title Available')
+                        article_link = article.get('link', '#')
+                        article_publisher = article.get('publisher', 'N/A')
+                        
+                        sentiment = sia.polarity_scores(article_title)
+                        color = "gray" 
                         if sentiment['compound'] >= 0.05:
                             color = "green"
                         elif sentiment['compound'] <= -0.05:
@@ -150,11 +176,10 @@ if primary_ticker:
                         
                         st.markdown(f"""
                         <div style="border-left: 5px solid {color}; padding-left: 10px; margin-bottom: 10px;">
-                            <p style="margin: 0;"><strong><a href="{article['link']}" target="_blank" style="text-decoration: none; color: inherit;">{article['title']}</a></strong></p>
-                            <small>Publisher: {article['publisher']} | Compound Score: {sentiment['compound']:.2f}</small>
+                            <p style="margin: 0;"><strong><a href="{article_link}" target="_blank" style="text-decoration: none; color: inherit;">{article_title}</a></strong></p>
+                            <small>Publisher: {article_publisher} | Compound Score: {sentiment['compound']:.2f}</small>
                         </div>
                         """, unsafe_allow_html=True)
-            # --- END OF NEW SECTION ---
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
