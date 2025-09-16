@@ -5,7 +5,7 @@ from datetime import date, timedelta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import nltk
-import requests # New import
+import requests
 
 st.set_page_config(page_title="Stock Analysis Dashboard", layout="wide")
 st.title("Stock Analysis Dashboard")
@@ -29,7 +29,6 @@ def get_ticker_info(ticker_symbol):
     """Fetches company information."""
     return yf.Ticker(ticker_symbol).info
 
-# --- START OF REWRITTEN NEWS FUNCTION ---
 @st.cache_data
 def get_news(ticker_symbol):
     """Fetches recent news from NewsAPI.org."""
@@ -53,7 +52,6 @@ def get_news(ticker_symbol):
     except Exception as e:
         st.error(f"Could not fetch news. Error: {e}. Please check your API key in secrets.toml.")
         return []
-# --- END OF REWRITTEN NEWS FUNCTION ---
 
 def calculate_rsi(data, window=14):
     """Calculates the Relative Strength Index (RSI)."""
@@ -91,7 +89,7 @@ if primary_ticker:
         if df.empty:
             st.error("No data found for the given ticker symbol and date range.")
         else:
-            # Display Company Profile and Metrics
+            # --- Display Company Profile and Metrics (Remains at the top) ---
             st.subheader(f"Company Profile: {info.get('longName', primary_ticker)}")
             st.markdown(f"**Sector**: {info.get('sector', 'N/A')} | **Industry**: {info.get('industry', 'N/A')}")
             with st.expander("Business Summary"):
@@ -105,81 +103,94 @@ if primary_ticker:
             with col3:
                 st.metric("Dividend Yield", f"{info.get('dividendYield', 0)*100:.2f}%")
             
-            # Price and Volume Chart
-            st.subheader(f"Price Chart for: {primary_ticker}")
-            fig_price = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                                      vertical_spacing=0.05, row_heights=[0.7, 0.3])
-            fig_price.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Candlestick'), row=1, col=1)
-            
-            if show_sma:
-                df['SMA_20'] = df['Close'].rolling(window=20).mean()
-                df['SMA_50'] = df['Close'].rolling(window=50).mean()
-                fig_price.add_trace(go.Scatter(x=df.index, y=df['SMA_20'], mode='lines', name='20-Day SMA', line=dict(color='orange')), row=1, col=1)
-                fig_price.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], mode='lines', name='50-Day SMA', line=dict(color='purple')), row=1, col=1)
+            # --- START OF NEW TABBED LAYOUT ---
+            tab1, tab2, tab3, tab4 = st.tabs(["📈 Chart Analysis", "💰 Financials", "📰 News", "🔮 Forecast"])
 
-            if show_volume:
-                fig_price.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume'), row=2, col=1)
-            
-            fig_price.update_layout(xaxis_rangeslider_visible=False, title=f"{primary_ticker} Price and Volume", yaxis_title="Price (USD)")
-            fig_price.update_yaxes(title_text="Volume", row=2, col=1)
-            st.plotly_chart(fig_price, use_container_width=True)
-            
-            # RSI Chart
-            if show_rsi:
-                df['RSI'] = calculate_rsi(df)
-                st.subheader("Relative Strength Index (RSI)")
-                fig_rsi = go.Figure()
-                fig_rsi.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', name='RSI'))
-                fig_rsi.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought (70)")
-                fig_rsi.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold (30)")
-                fig_rsi.update_layout(title="RSI Chart", yaxis_title="RSI")
-                st.plotly_chart(fig_rsi, use_container_width=True)
-            
-            # Comparative Analysis
-            if len(ticker_list) > 1 and show_comparison:
-                st.subheader("Comparative Performance")
-                norm_df = pd.DataFrame()
-                for ticker in ticker_list:
-                    data = get_stock_data(ticker, start_date, end_date)
-                    if not data.empty:
-                        norm_df[ticker] = (data['Close'] / data['Close'].iloc[0]) - 1
+            with tab1:
+                # Price and Volume Chart
+                st.subheader(f"Price Chart for: {primary_ticker}")
+                fig_price = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                                          vertical_spacing=0.05, row_heights=[0.7, 0.3])
+                fig_price.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Candlestick'), row=1, col=1)
                 
-                if not norm_df.empty:
-                    fig_comp = go.Figure()
-                    for ticker in norm_df.columns:
-                        fig_comp.add_trace(go.Scatter(x=norm_df.index, y=norm_df[ticker], mode='lines', name=ticker))
-                    
-                    fig_comp.update_layout(title="Normalized Stock Performance",
-                                           yaxis_title="Percentage Change",
-                                           yaxis_tickformat=".2%")
-                    st.plotly_chart(fig_comp, use_container_width=True)
+                if show_sma:
+                    df['SMA_20'] = df['Close'].rolling(window=20).mean()
+                    df['SMA_50'] = df['Close'].rolling(window=50).mean()
+                    fig_price.add_trace(go.Scatter(x=df.index, y=df['SMA_20'], mode='lines', name='20-Day SMA', line=dict(color='orange')), row=1, col=1)
+                    fig_price.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], mode='lines', name='50-Day SMA', line=dict(color='purple')), row=1, col=1)
 
-            # News Sentiment Analysis
-            if show_news:
-                st.subheader(f"Recent News for {primary_ticker}")
-                news = get_news(primary_ticker)
-                if not news:
-                    st.write("No recent news found.")
-                else:
-                    sia = SentimentIntensityAnalyzer()
-                    for article in news[:10]: 
-                        article_title = article.get('title', 'No Title Available')
-                        article_link = article.get('link', '#')
-                        article_publisher = article.get('publisher', 'N/A')
+                if show_volume:
+                    fig_price.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume'), row=2, col=1)
+                
+                fig_price.update_layout(xaxis_rangeslider_visible=False, title=f"{primary_ticker} Price and Volume", yaxis_title="Price (USD)")
+                fig_price.update_yaxes(title_text="Volume", row=2, col=1)
+                st.plotly_chart(fig_price, use_container_width=True)
+                
+                # RSI Chart
+                if show_rsi:
+                    df['RSI'] = calculate_rsi(df)
+                    st.subheader("Relative Strength Index (RSI)")
+                    fig_rsi = go.Figure()
+                    fig_rsi.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', name='RSI'))
+                    fig_rsi.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought (70)")
+                    fig_rsi.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold (30)")
+                    fig_rsi.update_layout(title="RSI Chart", yaxis_title="RSI")
+                    st.plotly_chart(fig_rsi, use_container_width=True)
+                
+                # Comparative Analysis
+                if len(ticker_list) > 1 and show_comparison:
+                    st.subheader("Comparative Performance")
+                    norm_df = pd.DataFrame()
+                    for ticker in ticker_list:
+                        data = get_stock_data(ticker, start_date, end_date)
+                        if not data.empty:
+                            norm_df[ticker] = (data['Close'] / data['Close'].iloc[0]) - 1
+                    
+                    if not norm_df.empty:
+                        fig_comp = go.Figure()
+                        for ticker in norm_df.columns:
+                            fig_comp.add_trace(go.Scatter(x=norm_df.index, y=norm_df[ticker], mode='lines', name=ticker))
                         
-                        sentiment = sia.polarity_scores(article_title)
-                        color = "gray" 
-                        if sentiment['compound'] >= 0.05:
-                            color = "green"
-                        elif sentiment['compound'] <= -0.05:
-                            color = "red"
-                        
-                        st.markdown(f"""
-                        <div style="border-left: 5px solid {color}; padding-left: 10px; margin-bottom: 10px;">
-                            <p style="margin: 0;"><strong><a href="{article_link}" target="_blank" style="text-decoration: none; color: inherit;">{article_title}</a></strong></p>
-                            <small>Publisher: {article_publisher} | Compound Score: {sentiment['compound']:.2f}</small>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        fig_comp.update_layout(title="Normalized Stock Performance",
+                                               yaxis_title="Percentage Change",
+                                               yaxis_tickformat=".2%")
+                        st.plotly_chart(fig_comp, use_container_width=True)
+
+            with tab2:
+                st.subheader(f"Financials for {primary_ticker}")
+                st.info("Financial statements and key ratios will be displayed here in a future update.")
+
+            with tab3:
+                # News Sentiment Analysis
+                if show_news:
+                    st.subheader(f"Recent News for {primary_ticker}")
+                    news = get_news(primary_ticker)
+                    if not news:
+                        st.write("No recent news found.")
+                    else:
+                        sia = SentimentIntensityAnalyzer()
+                        for article in news[:15]: # Show a few more articles
+                            article_title = article.get('title', 'No Title Available')
+                            article_link = article.get('link', '#')
+                            article_publisher = article.get('publisher', 'N/A')
+                            
+                            sentiment = sia.polarity_scores(article_title)
+                            color = "gray" 
+                            if sentiment['compound'] >= 0.05:
+                                color = "green"
+                            elif sentiment['compound'] <= -0.05:
+                                color = "red"
+                            
+                            st.markdown(f"""
+                            <div style="border-left: 5px solid {color}; padding-left: 10px; margin-bottom: 10px;">
+                                <p style="margin: 0;"><strong><a href="{article_link}" target="_blank" style="text-decoration: none; color: inherit;">{article_title}</a></strong></p>
+                                <small>Publisher: {article_publisher} | Compound Score: {sentiment['compound']:.2f}</small>
+                            </div>
+                            """, unsafe_allow_html=True)
+            
+            with tab4:
+                st.subheader(f"Price Forecast for {primary_ticker}")
+                st.info("Machine learning-based price forecasting will be available here in a future update.")
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
