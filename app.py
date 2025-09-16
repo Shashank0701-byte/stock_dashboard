@@ -29,6 +29,17 @@ def get_ticker_info(ticker_symbol):
     """Fetches company information."""
     return yf.Ticker(ticker_symbol).info
 
+# --- NEW HELPER FUNCTIONS FOR FINANCIALS ---
+@st.cache_data
+def get_financials(ticker_symbol):
+    """Fetches income statement."""
+    return yf.Ticker(ticker_symbol).financials
+
+@st.cache_data
+def get_balance_sheet(ticker_symbol):
+    """Fetches balance sheet."""
+    return yf.Ticker(ticker_symbol).balance_sheet
+
 @st.cache_data
 def get_news(ticker_symbol):
     """Fetches recent news from NewsAPI.org."""
@@ -37,10 +48,9 @@ def get_news(ticker_symbol):
         url = f"https://newsapi.org/v2/everything?q={ticker_symbol}&apiKey={API_KEY}&sortBy=publishedAt&language=en"
         
         response = requests.get(url)
-        response.raise_for_status() # Raises an exception for bad status codes
+        response.raise_for_status()
         
         articles = response.json().get("articles", [])
-        # Format the data to match what our app expects
         formatted_news = []
         for article in articles:
             formatted_news.append({
@@ -103,7 +113,7 @@ if primary_ticker:
             with col3:
                 st.metric("Dividend Yield", f"{info.get('dividendYield', 0)*100:.2f}%")
             
-            # --- START OF NEW TABBED LAYOUT ---
+            # --- START OF TABBED LAYOUT ---
             tab1, tab2, tab3, tab4 = st.tabs(["📈 Chart Analysis", "💰 Financials", "📰 News", "🔮 Forecast"])
 
             with tab1:
@@ -157,8 +167,52 @@ if primary_ticker:
                         st.plotly_chart(fig_comp, use_container_width=True)
 
             with tab2:
+                # --- START OF FINANCIALS CONTENT ---
                 st.subheader(f"Financials for {primary_ticker}")
-                st.info("Financial statements and key ratios will be displayed here in a future update.")
+
+                # Fetch data
+                financials = get_financials(primary_ticker)
+                balance_sheet = get_balance_sheet(primary_ticker)
+
+                if financials.empty or balance_sheet.empty:
+                    st.warning("Could not retrieve financial data for this stock.")
+                else:
+                    # Display key metrics from income statement
+                    st.write("**Income Statement Highlights (Annual)**")
+                    try:
+                        income_metrics = {
+                            "Total Revenue": financials.loc['Total Revenue'].iloc[0],
+                            "Gross Profit": financials.loc['Gross Profit'].iloc[0],
+                            "Net Income": financials.loc['Net Income'].iloc[0],
+                        }
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Total Revenue", f"${income_metrics['Total Revenue']/1e6:,.0f}M")
+                        col2.metric("Gross Profit", f"${income_metrics['Gross Profit']/1e6:,.0f}M")
+                        col3.metric("Net Income", f"${income_metrics['Net Income']/1e6:,.0f}M")
+                    except KeyError:
+                        st.warning("Could not display some income statement metrics.")
+
+                    # Display key metrics from balance sheet
+                    st.write("**Balance Sheet Highlights (Annual)**")
+                    try:
+                        balance_metrics = {
+                            "Total Assets": balance_sheet.loc['Total Assets'].iloc[0],
+                            "Total Liabilities": balance_sheet.loc['Total Liabilities Net Minority Interest'].iloc[0],
+                            "Total Equity": balance_sheet.loc['Total Equity Gross Minority Interest'].iloc[0]
+                        }
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Total Assets", f"${balance_metrics['Total Assets']/1e6:,.0f}M")
+                        col2.metric("Total Liabilities", f"${balance_metrics['Total Liabilities']/1e6:,.0f}M")
+                        col3.metric("Total Equity", f"${balance_metrics['Total Equity']/1e6:,.0f}M")
+                    except KeyError:
+                        st.warning("Could not display some balance sheet metrics.")
+                    
+                    # Display full statements in expanders
+                    with st.expander("View Full Annual Income Statement"):
+                        st.dataframe(financials)
+                    with st.expander("View Full Annual Balance Sheet"):
+                        st.dataframe(balance_sheet)
+                # --- END OF FINANCIALS CONTENT ---
 
             with tab3:
                 # News Sentiment Analysis
@@ -169,7 +223,7 @@ if primary_ticker:
                         st.write("No recent news found.")
                     else:
                         sia = SentimentIntensityAnalyzer()
-                        for article in news[:15]: # Show a few more articles
+                        for article in news[:15]:
                             article_title = article.get('title', 'No Title Available')
                             article_link = article.get('link', '#')
                             article_publisher = article.get('publisher', 'N/A')
